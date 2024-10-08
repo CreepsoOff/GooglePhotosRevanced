@@ -1,0 +1,89 @@
+name: Build and Release
+
+on:
+    workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and Patch APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Étape 1: Installer Java
+      - name: Set up Java
+        uses: actions/setup-java@v1
+        with:
+          java-version: '17'
+
+      # Étape 2: Télécharger l'APK Google Photos
+      - name: Download Google Photos APK
+        run: |
+          curl -L -o google_photos_clean.apk https://github.com/CreepsoOff/google_photo_revanced/releases/download/dev0.1/Google.Photos_7.2.0.apk
+
+      # Étape 3: Télécharger ReVanced CLI, Patches, et Integrations
+      - name: Download ReVanced CLI, Patches, and Integrations
+        run: |
+          curl -L -o revanced-cli.jar https://github.com/ReVanced/revanced-cli/releases/download/v4.6.0/revanced-cli-4.6.0-all.jar
+          curl -L -o revanced-patches.jar https://github.com/ReVanced/revanced-patches/releases/download/v4.17.0-dev.5/revanced-patches-4.17.0-dev.5.jar
+          curl -L -o revanced-integrations.apk https://github.com/ReVanced/revanced-integrations/releases/download/v1.16.0-dev.4/revanced-integrations-1.16.0-dev.4.apk
+
+      # Étape 4: Patcher l'APK Google Photos
+      - name: Patch Google Photos APK
+        run: |
+          java -jar revanced-cli.jar patch \
+            --patch-bundle revanced-patches.jar \
+            -o patched_google_photos.apk \
+            google_photos_clean.apk \
+            --merge revanced-integrations.apk
+
+      # Étape 5: Lire la version depuis version.txt
+      - name: Read version from version.txt
+        id: read_version
+        run: |
+          if [ -f version.txt ]; then
+            version=$(cat version.txt)
+          else
+            version="7.2.0"
+          fi
+          echo "version=${version}" >> $GITHUB_OUTPUT
+
+      # Étape 6: Créer un tag
+      - name: Create tag
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/${{ steps.read_version.outputs.version }}',
+              sha: context.sha
+            })
+
+      # Étape 7: Créer une release
+      - name: Create release
+        uses: ncipollo/release-action@v1
+        with:
+          name: ${{ steps.read_version.outputs.version }}
+          tag: ${{ steps.read_version.outputs.version }}
+          makeLatest: "true"
+          omitBody: true
+          omitBodyDuringUpdate: true
+          allowUpdates: true
+          replacesArtifacts: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Étape 8: Pousser la nouvelle release
+      - name: Pushing new release
+        uses: ncipollo/release-action@v1
+        with:
+          name: ${{ steps.read_version.outputs.version }}
+          artifacts: "release_output/*"
+          tag: ${{ steps.read_version.outputs.version }}
+          makeLatest: "true"
+          omitBody: true
+          omitBodyDuringUpdate: true
+          allowUpdates: true
+          replacesArtifacts: true
+          token: ${{ secrets.GITHUB_TOKEN }}
